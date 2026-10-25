@@ -11,14 +11,14 @@
             touch-action: manipulation;
             user-select: none;
             -webkit-user-select: none;
-            background-color: #0f172a;
+            background-color: #064e3b;
             font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', Meiryo, sans-serif;
             overflow: hidden;
         }
         canvas {
             display: block;
-            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
-            background: #1e1b4b;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
+            background: #ecfdf5;
         }
     </style>
 </head>
@@ -228,13 +228,16 @@
     let particles = [];
     let floatingTexts = [];
 
-    // --- Stars Background Background Elements ---
-    const stars = Array.from({ length: 45 }, () => ({
+    // --- Morning Forest Background Elements (Leaves & Sun Motes) ---
+    const forestMotes = Array.from({ length: 30 }, () => ({
         x: Math.random() * V_WIDTH,
         y: Math.random() * V_HEIGHT,
-        radius: Math.random() * 1.5 + 0.5,
-        alpha: Math.random() * 0.8 + 0.2,
-        twinkleSpeed: Math.random() * 0.03 + 0.01
+        radius: Math.random() * 2.5 + 1.2,
+        alpha: Math.random() * 0.6 + 0.3,
+        speedY: Math.random() * 0.4 + 0.2,
+        speedX: (Math.random() - 0.5) * 0.3,
+        pulseSpeed: Math.random() * 0.03 + 0.015,
+        type: Math.random() > 0.4 ? 'light' : 'leaf'
     }));
 
     // --- Glider Object ---
@@ -303,19 +306,29 @@
                     this.vx = -Math.abs(this.vx);
                 }
                 this.angle = Math.sin(this.timer * 0.1) * 0.08;
-            } else if (this.state === GLIDER_STATE.DIVING) {
-                this.x += this.vx * 0.5;
-                this.vy += 0.28; // Gravity
+            } else if (this.state === GLIDER_STATE.DIVING || this.state === GLIDER_STATE.GLIDING) {
+                const isGliding = this.state === GLIDER_STATE.GLIDING;
+                
+                // Movement
+                this.x += this.vx * (isGliding ? 0.7 : 0.5);
+                this.vy += isGliding ? 0.09 : 0.28;
                 this.y += this.vy;
-                this.angle = this.vx * 0.05;
-            } else if (this.state === GLIDER_STATE.GLIDING) {
-                this.x += this.vx * 0.7;
-                this.vy += 0.09; // Lighter gravity during glide
-                this.y += this.vy;
-                this.angle = this.vx * 0.08;
+                this.angle = this.vx * (isGliding ? 0.08 : 0.05);
 
-                // Spawn wind trail particles
-                if (this.timer % 3 === 0) {
+                // --- Wall bounce (左右の端でバウンドして反射) ---
+                const halfWidth = this.width / 2;
+                if (this.x - halfWidth <= 0) {
+                    this.x = halfWidth;
+                    this.vx = Math.abs(this.vx) * 0.9; // 向きを反転して少し減速バウンド
+                    this.createBounceParticles(this.x, this.y);
+                } else if (this.x + halfWidth >= V_WIDTH) {
+                    this.x = V_WIDTH - halfWidth;
+                    this.vx = -Math.abs(this.vx) * 0.9;
+                    this.createBounceParticles(this.x, this.y);
+                }
+
+                // Wind trail particles when gliding
+                if (isGliding && this.timer % 3 === 0) {
                     particles.push(new Particle(
                         this.x + (Math.random() - 0.5) * 30,
                         this.y + 20,
@@ -338,6 +351,19 @@
             // Screen boundary checks for falling
             if ((this.state === GLIDER_STATE.DIVING || this.state === GLIDER_STATE.GLIDING) && this.y > V_HEIGHT + 60) {
                 handleMiss();
+            }
+        },
+
+        createBounceParticles(x, y) {
+            for (let i = 0; i < 6; i++) {
+                particles.push(new Particle(
+                    x,
+                    y + (Math.random() - 0.5) * 20,
+                    '#fef08a',
+                    3.5,
+                    3,
+                    15
+                ));
             }
         },
 
@@ -667,61 +693,118 @@
 
     // --- Drawing Functions ---
     function drawBackground(ctx) {
-        // Night room/sky gradient
+        // Bright Morning Sky & Forest Gradient
         const bgGrad = ctx.createLinearGradient(0, 0, 0, V_HEIGHT);
-        bgGrad.addColorStop(0, '#0f172a');
-        bgGrad.addColorStop(0.5, '#1e1b4b');
-        bgGrad.addColorStop(1, '#311042');
+        bgGrad.addColorStop(0, '#7dd3fc');    // Clear morning blue sky
+        bgGrad.addColorStop(0.35, '#bae6fd'); // Gentle horizon glow
+        bgGrad.addColorStop(0.65, '#a7f3d0'); // Canopy light green
+        bgGrad.addColorStop(1, '#15803d');    // Rich forest floor green
         ctx.fillStyle = bgGrad;
         ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT);
 
-        // Twinkling stars / dust motes
-        stars.forEach(star => {
-            star.alpha += star.twinkleSpeed;
-            if (star.alpha > 0.9 || star.alpha < 0.2) star.twinkleSpeed = -star.twinkleSpeed;
-
-            ctx.save();
-            ctx.globalAlpha = Math.max(0, Math.min(1, star.alpha));
-            ctx.fillStyle = '#fef08a';
-            ctx.beginPath();
-            ctx.arc(star.x, star.y, star.radius, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.restore();
-        });
-
-        // Soft moon glow
-        const moonGrad = ctx.createRadialGradient(V_WIDTH - 60, 80, 5, V_WIDTH - 60, 80, 80);
-        moonGrad.addColorStop(0, 'rgba(254, 240, 138, 0.45)');
-        moonGrad.addColorStop(1, 'rgba(254, 240, 138, 0)');
-        ctx.fillStyle = moonGrad;
+        // Soft Morning Sun Rays (木漏れ日)
+        ctx.save();
+        ctx.globalAlpha = 0.16;
+        ctx.fillStyle = '#fef08a';
         ctx.beginPath();
-        ctx.arc(V_WIDTH - 60, 80, 80, 0, Math.PI * 2);
+        ctx.moveTo(0, 0);
+        ctx.lineTo(160, 0);
+        ctx.lineTo(280, V_HEIGHT);
+        ctx.lineTo(80, V_HEIGHT);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.moveTo(180, 0);
+        ctx.lineTo(320, 0);
+        ctx.lineTo(V_WIDTH + 40, V_HEIGHT);
+        ctx.lineTo(V_WIDTH - 80, V_HEIGHT);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+
+        // Morning Sun (朝のやさしい太陽)
+        const sunGrad = ctx.createRadialGradient(V_WIDTH - 70, 75, 10, V_WIDTH - 70, 75, 90);
+        sunGrad.addColorStop(0, 'rgba(254, 240, 138, 0.9)');
+        sunGrad.addColorStop(0.4, 'rgba(253, 224, 71, 0.4)');
+        sunGrad.addColorStop(1, 'rgba(253, 224, 71, 0)');
+        ctx.fillStyle = sunGrad;
+        ctx.beginPath();
+        ctx.arc(V_WIDTH - 70, 75, 90, 0, Math.PI * 2);
         ctx.fill();
 
         ctx.fillStyle = '#fef08a';
         ctx.beginPath();
-        ctx.arc(V_WIDTH - 60, 80, 26, 0, Math.PI * 2);
+        ctx.arc(V_WIDTH - 70, 75, 28, 0, Math.PI * 2);
         ctx.fill();
+
+        // Distant Trees Silhouette
+        ctx.save();
+        ctx.fillStyle = 'rgba(21, 128, 61, 0.35)';
+        for (let i = -1; i < 6; i++) {
+            ctx.beginPath();
+            ctx.arc(i * 105, 520, 75, Math.PI, 0);
+            ctx.fill();
+        }
+        ctx.fillStyle = 'rgba(15, 118, 110, 0.4)';
+        for (let i = 0; i < 5; i++) {
+            ctx.beginPath();
+            ctx.arc(i * 120 + 40, 560, 90, Math.PI, 0);
+            ctx.fill();
+        }
+        ctx.restore();
+
+        // Floating Sun Motes & Gentle Morning Leaves
+        forestMotes.forEach(mote => {
+            mote.y += mote.speedY;
+            mote.x += mote.speedX;
+            mote.alpha += mote.pulseSpeed;
+            if (mote.alpha > 0.8 || mote.alpha < 0.25) mote.pulseSpeed = -mote.pulseSpeed;
+
+            // Wrap around screen
+            if (mote.y > V_HEIGHT + 10) mote.y = -10;
+            if (mote.x < -10) mote.x = V_WIDTH + 10;
+            if (mote.x > V_WIDTH + 10) mote.x = -10;
+
+            ctx.save();
+            ctx.globalAlpha = Math.max(0.1, Math.min(1, mote.alpha));
+            if (mote.type === 'light') {
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath();
+                ctx.arc(mote.x, mote.y, mote.radius, 0, Math.PI * 2);
+                ctx.fill();
+            } else {
+                ctx.fillStyle = '#86efac';
+                ctx.beginPath();
+                ctx.ellipse(mote.x, mote.y, mote.radius * 1.8, mote.radius, 0.5, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.restore();
+        });
     }
 
     function drawHUD(ctx) {
         // Score Display
         ctx.save();
         ctx.font = "bold 26px 'Arial Rounded MT Bold', sans-serif";
-        ctx.fillStyle = "#ffffff";
+        ctx.fillStyle = "#064e3b";
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 4;
         ctx.textAlign = "left";
+        ctx.strokeText(`SCORE: ${score}`, 24, 48);
         ctx.fillText(`SCORE: ${score}`, 24, 48);
 
         // Best Score
         ctx.font = "bold 15px sans-serif";
-        ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
+        ctx.fillStyle = "#047857";
+        ctx.strokeText(`BEST: ${bestScore}`, 24, 72);
         ctx.fillText(`BEST: ${bestScore}`, 24, 72);
 
         // Lives indicator (Heart icons)
         ctx.textAlign = "right";
         let hearts = '';
         for (let i = 0; i < 3; i++) {
-            hearts += i < lives ? '❤️ ' : '🖤 ';
+            hearts += i < lives ? '❤️ ' : '🤍 ';
         }
         ctx.font = "20px sans-serif";
         ctx.fillText(hearts.trim(), V_WIDTH - 24, 48);
@@ -729,8 +812,11 @@
         // Glider state helper text
         if (glider.state === GLIDER_STATE.DIVING && glider.glideCharges > 0) {
             ctx.textAlign = "center";
-            ctx.font = "bold 14px sans-serif";
-            ctx.fillStyle = "#38bdf8";
+            ctx.font = "bold 15px sans-serif";
+            ctx.fillStyle = "#0369a1";
+            ctx.strokeStyle = "#ffffff";
+            ctx.lineWidth = 4;
+            ctx.strokeText("TAP AGAIN TO GLIDE!", V_WIDTH / 2, 160);
             ctx.fillText("TAP AGAIN TO GLIDE!", V_WIDTH / 2, 160);
         }
 
@@ -738,8 +824,8 @@
     }
 
     function drawTitleScreen(ctx) {
-        // Dim overlay
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.75)';
+        // Dim overlay with gentle warm morning tint
+        ctx.fillStyle = 'rgba(6, 78, 59, 0.7)';
         ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT);
 
         ctx.save();
